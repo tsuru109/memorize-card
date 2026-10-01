@@ -1,0 +1,9 @@
+{
+  "name": "暗記カード",
+  "short_name": "暗記カード",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#f5f6f8",
+  "lang": "ja"
+}
