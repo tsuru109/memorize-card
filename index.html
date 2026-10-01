@@ -17,7 +17,7 @@ input[type=file]{max-width:100%}input[type=text],select{border:1px solid var(--l
 .grid{display:grid;grid-template-columns:280px 1fr;gap:16px}.sidebar{display:flex;flex-direction:column;gap:10px}.file-item{padding:12px;border:1px solid var(--line);border-radius:11px;background:#fff;text-align:left}.file-item.active{border-color:var(--accent);background:#eff6ff}.file-item strong{display:block}.file-item small{color:var(--muted)}
 .empty{padding:50px 20px;text-align:center;color:var(--muted)}
 .editor-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.tool.active{outline:2px solid var(--accent)}
-.canvas-wrap{background:#111;border-radius:12px;overflow:auto;display:flex;justify-content:center;align-items:flex-start;max-height:65vh;padding:10px}
+.canvas-wrap{background:#111;border-radius:12px;overflow:auto;display:flex;justify-content:center;align-items:flex-start;max-height:65vh;padding:10px}.editor-canvas-wrap{justify-content:flex-start}.zoom-controls{display:flex;align-items:center;gap:6px}.zoom-controls button{min-width:38px}
 #editCanvas,#studyCanvas{max-width:100%;height:auto;touch-action:none;display:block;cursor:crosshair}
 .card-meta{margin:12px 0;color:var(--muted);font-size:13px}.stats{display:flex;gap:10px;flex-wrap:wrap}.stat{background:#f1f3f5;border-radius:9px;padding:8px 10px;font-size:13px}
 .study-stage{max-width:850px;margin:auto}.study-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}.study-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.study-buttons button{padding:15px;font-weight:700}.history{margin-top:18px}.history-table{width:100%;border-collapse:collapse;font-size:13px}.history-table th,.history-table td{padding:8px;border-bottom:1px solid var(--line);text-align:left}
@@ -72,11 +72,17 @@ label.file-label{display:inline-flex;align-items:center;gap:8px;padding:10px 14p
           <div class="editor-tools">
             <button id="penBtn" class="secondary tool active">ペン</button>
             <button id="eraserBtn" class="secondary tool">消しゴム</button>
-            <label>太さ <input id="brushSize" type="range" min="4" max="80" value="28"></label>
+            <label>ペン <input id="penSize" type="range" min="4" max="60" value="24"></label>
+            <label>消しゴム <input id="eraserSize" type="range" min="2" max="30" value="10"></label>
+            <div class="zoom-controls">
+              <button id="zoomOut" class="secondary" type="button">−</button>
+              <button id="zoomReset" class="secondary" type="button">100%</button>
+              <button id="zoomIn" class="secondary" type="button">＋</button>
+            </div>
             <button id="clearMask" class="danger">塗りつぶしを全消去</button>
           </div>
-          <div class="canvas-wrap"><canvas id="editCanvas"></canvas></div>
-          <p class="muted" style="font-size:13px">画像上をドラッグして塗りつぶします。消しゴムで塗りつぶしだけを消せます。元画像は変更されません。</p>
+          <div class="canvas-wrap editor-canvas-wrap"><canvas id="editCanvas"></canvas></div>
+          <p class="muted" style="font-size:13px">画像上をドラッグして塗りつぶします。ペンと消しゴムは別々に太さを調整できます。＋／−で作成画面を拡大・縮小できます。元画像は変更されません。</p>
         </div>
       </main>
     </div>
@@ -212,26 +218,45 @@ function setupCanvas(canvas,im){
 }
 function loadCardToEditor(id){
  const c=currentFile().cards.find(x=>x.id===id);if(!c)return;
- currentCardId=id; editImage=new Image();editImage.onload=()=>{
+ currentCardId=id; editZoom=1; editImage=new Image();editImage.onload=()=>{
    const cv=document.getElementById("editCanvas"),r=setupCanvas(cv,editImage);editCtx=r.ctx;
    editMask=document.createElement("canvas");editMask.width=cv.width;editMask.height=cv.height;
    if(c.mask){const m=new Image();m.onload=()=>{editMask.getContext("2d").drawImage(m,0,0,cv.width,cv.height);drawEditor()};m.src=c.mask}else drawEditor();
  };editImage.src=c.image;
 }
-function drawEditor(){editCtx.clearRect(0,0,editCanvas.width,editCanvas.height);editCtx.drawImage(editImage,0,0,editCanvas.width,editCanvas.height);editCtx.drawImage(editMask,0,0)}
-function pointerPos(e,canvas){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
-function paint(e){
- if(!drawing)return;const p=pointerPos(e,editCanvas),m=editMask.getContext("2d"),size=+document.getElementById("brushSize").value;
- m.save();m.globalCompositeOperation=tool==="pen"?"source-over":"destination-out";
- m.fillStyle="#000";m.beginPath();m.arc(p.x,p.y,size/2,0,Math.PI*2);m.fill();m.restore();drawEditor();
+let editZoom=1;
+let lastPaintPoint=null;
+function applyEditZoom(){
+ const cv=document.getElementById("editCanvas"),wrap=cv.parentElement;if(!cv.width||!cv.height)return;
+ const available=Math.max(120,wrap.clientWidth-20),fitWidth=Math.min(cv.width,available),displayWidth=Math.round(fitWidth*editZoom);
+ cv.style.width=displayWidth+"px";cv.style.height=Math.round(cv.height*(displayWidth/cv.width))+"px";
+ document.getElementById("zoomReset").textContent=Math.round(editZoom*100)+"%";
 }
-editCanvas.addEventListener("pointerdown",e=>{drawing=true;editCanvas.setPointerCapture(e.pointerId);paint(e)});
+function drawEditor(){editCtx.clearRect(0,0,editCanvas.width,editCanvas.height);editCtx.drawImage(editImage,0,0,editCanvas.width,editCanvas.height);editCtx.drawImage(editMask,0,0);applyEditZoom()}
+function pointerPos(e,canvas){const r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+function currentBrushSize(){return tool==="pen"?+document.getElementById("penSize").value:+document.getElementById("eraserSize").value}
+function paintAtPoint(p){
+ const m=editMask.getContext("2d");m.save();m.globalCompositeOperation=tool==="pen"?"source-over":"destination-out";m.lineCap="round";m.lineJoin="round";m.lineWidth=currentBrushSize();m.strokeStyle="#000";m.beginPath();
+ if(lastPaintPoint){m.moveTo(lastPaintPoint.x,lastPaintPoint.y);m.lineTo(p.x,p.y)}else{m.moveTo(p.x,p.y);m.lineTo(p.x+0.01,p.y+0.01)}
+ m.stroke();m.restore();lastPaintPoint=p;
+}
+function paint(e){
+ if(!drawing)return;e.preventDefault();
+ const events=typeof e.getCoalescedEvents==="function"?e.getCoalescedEvents():[e];
+ for(const ev of events)paintAtPoint(pointerPos(ev,editCanvas));drawEditor();
+}
+editCanvas.addEventListener("pointerdown",e=>{e.preventDefault();drawing=true;lastPaintPoint=null;editCanvas.setPointerCapture(e.pointerId);paintAtPoint(pointerPos(e,editCanvas));drawEditor()});
 editCanvas.addEventListener("pointermove",paint);
-editCanvas.addEventListener("pointerup",()=>drawing=false);editCanvas.addEventListener("pointercancel",()=>drawing=false);
+function endPaint(){drawing=false;lastPaintPoint=null}
+editCanvas.addEventListener("pointerup",endPaint);editCanvas.addEventListener("pointercancel",endPaint);
 document.getElementById("penBtn").onclick=()=>{tool="pen";toggleTools()};
 document.getElementById("eraserBtn").onclick=()=>{tool="eraser";toggleTools()};
 function toggleTools(){document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));document.getElementById(tool==="pen"?"penBtn":"eraserBtn").classList.add("active")}
-document.getElementById("clearMask").onclick=()=>{editMask.getContext("2d").clearRect(0,0,editMask.width,editMask.height);drawEditor()};
+document.getElementById("clearMask").onclick=()=>{editMask.getContext("2d").clearRect(0,0,editMask.width,editMask.height);lastPaintPoint=null;drawEditor()};
+document.getElementById("zoomOut").onclick=()=>{editZoom=Math.max(.5,Math.round((editZoom-.25)*100)/100);applyEditZoom()};
+document.getElementById("zoomIn").onclick=()=>{editZoom=Math.min(3,Math.round((editZoom+.25)*100)/100);applyEditZoom()};
+document.getElementById("zoomReset").onclick=()=>{editZoom=1;applyEditZoom()};
+window.addEventListener("resize",applyEditZoom);
 document.getElementById("saveCard").onclick=()=>{
  const c=currentCard();if(!c)return;c.mask=editMask.toDataURL("image/png");saveDB();renderFiles();alert("カードを保存しました。");
 };
